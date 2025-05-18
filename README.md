@@ -1,21 +1,23 @@
 # sml-matrix-market
 
-Standard ML package for parsing [MatrixMarket](https://math.nist.gov/MatrixMarket/formats.html) files.
+:warning: work in progress :warning:
+
+Standard ML package for parsing [MatrixMarket](https://math.nist.gov/MatrixMarket/formats.html) (`.mtx`) files.
 
 Compatible with the [`smlpkg`](https://github.com/diku-dk/smlpkg)
 package manager.
 
-This library is reasonably well-optimized, and highly parallel,
+This library is parallelized
 if compiled with [MaPLe](https://github.com/mpllang/mpl).
 
 # Library sources
 
 There are two source files:
 
-  * `lib/github.com/shwestrick/sml-matrix-market/sml-matrix-market.mlb`
-  * `lib/github.com/shwestrick/sml-matrix-market/sml-matrix-market.mpl.mlb`
+  * `lib/github.com/shwestrick/sml-matrix-market/sources.mlton.mlb`
+  * `lib/github.com/shwestrick/sml-matrix-market/sources.mpl.mlb`
 
-The `.mlb` is for use with normal SML (e.g. [MLton](http://mlton.org/))
-and the `.mpl.mlb` is for use with [MaPLe](https://github.com/mpllang/mpl).
+The `.mlton.mlb` file is for use with [MLton](http://mlton.org/)
+and the `.mpl.mlb` file is for use with [MaPLe](https://github.com/mpllang/mpl).
 Both supply the same interface, described below.
 

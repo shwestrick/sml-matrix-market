@@ -1,0 +1,6 @@
+local
+  ../../mpllang/mpllib/sources.mlton.mlb
+  MatrixMarket.sml
+in
+  functor MatrixMarket
+end

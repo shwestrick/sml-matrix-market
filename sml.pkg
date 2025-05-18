@@ -1,0 +1,5 @@
+package github.com/shwestrick/sml-matrix-market
+
+require {
+  github.com/mpllang/mpllib 0.5.0 #6cfabda8fd78ffc8d9739abc456a7009bebb50a9
+}
