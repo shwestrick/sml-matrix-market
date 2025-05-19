@@ -317,12 +317,36 @@ struct
     | NONE => error path "invalid real"
 
 
-  fun parse_coordinate_real
+  fun parse_coordinate {num_rows, num_cols, absolute_line, path} chars =
+    let
+      val chars = skip_whitespace chars
+      val (r, chars) = parse_nonnegative_integer path chars
+      val chars = skip_whitespace chars
+      val (c, chars) = parse_nonnegative_integer path chars
+    in
+      if 0 < r andalso r <= num_rows then
+        ()
+      else
+        error path
+          ("line " ^ Int.toString (1 + absolute_line) ^ ": row index "
+           ^ Int.toString r ^ " out of bounds");
+
+      if 0 < c andalso c <= num_cols then
+        ()
+      else
+        error path
+          ("line " ^ Int.toString (1 + absolute_line) ^ ": col index "
+           ^ Int.toString c ^ " out of bounds");
+
+      (r, c, chars)
+    end
+
+
+  fun parse_coordinate_real_data
     { path
     , contents
-    , num_lines
     , get_line_range
-    , first_non_comment_line
+    , start_line
     , num_rows
     , num_cols
     , num_entries
@@ -333,17 +357,6 @@ struct
         in Seq.subseq contents (start, stop - start)
         end
 
-      val start_entry_line = first_non_comment_line + 1
-      val stop_entry_line = start_entry_line + num_entries
-      val () =
-        if stop_entry_line <= num_lines then
-          ()
-        else
-          error path
-            ("not enough lines to parse: expected " ^ Int.toString num_entries
-             ^ " entries but found only "
-             ^ Int.toString (num_lines - start_entry_line))
-
       val row_indices = ForkJoin.alloc num_entries
       val col_indices = ForkJoin.alloc num_entries
       val values = ForkJoin.alloc num_entries
@@ -351,27 +364,18 @@ struct
       (* parse entries and write results *)
       val () = ForkJoin.parfor 1000 (0, num_entries) (fn i =>
         let
-          val cs = make_line (start_entry_line + i)
-          val cs = skip_whitespace cs
-          val (r, cs) = parse_nonnegative_integer path cs
-          val cs = skip_whitespace cs
-          val (c, cs) = parse_nonnegative_integer path cs
+          val absolute_line = start_line + i
+          val cs = make_line absolute_line
+          val (r, c, cs) =
+            parse_coordinate
+              { num_rows = num_rows
+              , num_cols = num_cols
+              , absolute_line = absolute_line
+              , path = path
+              } cs
           val cs = skip_whitespace cs
           val v = parse_real path cs
         in
-          if 0 < r andalso r <= num_rows then
-            ()
-          else
-            error path
-              ("line " ^ Int.toString (1 + start_entry_line + i)
-               ^ ": row index " ^ Int.toString r ^ " out of bounds");
-          if 0 < c andalso c <= num_cols then
-            ()
-          else
-            error path
-              ("line " ^ Int.toString (1 + start_entry_line + i)
-               ^ ": col index " ^ Int.toString c ^ " out of bounds");
-
           Array.update (row_indices, i, I.fromInt r);
           Array.update (col_indices, i, I.fromInt c);
           Array.update
@@ -383,6 +387,45 @@ struct
         , col_indices = col_indices
         , values = Values.Real values
         }
+    end
+
+
+  fun parse_coordinate_pattern_data
+    { path
+    , contents
+    , get_line_range
+    , start_line
+    , num_rows
+    , num_cols
+    , num_entries
+    } =
+    let
+      fun make_line i =
+        let val (start, stop) = get_line_range i
+        in Seq.subseq contents (start, stop - start)
+        end
+
+      val row_indices = ForkJoin.alloc num_entries
+      val col_indices = ForkJoin.alloc num_entries
+
+      (* parse entries and write results *)
+      val () = ForkJoin.parfor 1000 (0, num_entries) (fn i =>
+        let
+          val absolute_line = start_line + i
+          val cs = make_line absolute_line
+          val (r, c, _) =
+            parse_coordinate
+              { num_rows = num_rows
+              , num_cols = num_cols
+              , absolute_line = absolute_line
+              , path = path
+              } cs
+        in
+          Array.update (row_indices, i, I.fromInt r);
+          Array.update (col_indices, i, I.fromInt c)
+        end)
+    in
+      Pattern {row_indices = row_indices, col_indices = col_indices}
     end
 
 
@@ -436,15 +479,25 @@ struct
                 valOf num_entries
                 handle Option =>
                   error path "missing number of entries for coordinate format"
+
+              val start_line = first_non_comment_line + 1
+              val stop_line = start_line + num_entries
+              val () =
+                if stop_line <= num_lines then
+                  ()
+                else
+                  error path
+                    ("not enough lines to parse: expected "
+                     ^ Int.toString num_entries ^ " entries but found only "
+                     ^ Int.toString (num_lines - start_line))
             in
               case f2 of
                 Header.Real =>
-                  parse_coordinate_real
+                  parse_coordinate_real_data
                     { path = path
                     , contents = contents
-                    , num_lines = num_lines
                     , get_line_range = get_line_range
-                    , first_non_comment_line = first_non_comment_line
+                    , start_line = start_line
                     , num_rows = num_rows
                     , num_cols = num_cols
                     , num_entries = num_entries
@@ -462,7 +515,15 @@ struct
                     , values = Values.Complex (emp ())
                     }
               | Header.Pattern =>
-                  Pattern {row_indices = emp (), col_indices = emp ()}
+                  parse_coordinate_pattern_data
+                    { path = path
+                    , contents = contents
+                    , get_line_range = get_line_range
+                    , start_line = start_line
+                    , num_rows = num_rows
+                    , num_cols = num_cols
+                    , num_entries = num_entries
+                    }
             end
 
         | Header.Array =>
