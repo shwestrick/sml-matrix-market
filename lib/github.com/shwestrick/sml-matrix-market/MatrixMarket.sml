@@ -200,6 +200,15 @@ struct
       SOME i => Seq.drop chars i
     | NONE => Seq.drop chars (Seq.length chars)
 
+  fun skip_until_whitespace chars =
+    case
+      FindFirst.findFirstSerial (0, Seq.length chars)
+        (Char.isSpace o Seq.nth chars)
+    of
+      SOME i => Seq.drop chars i
+    | NONE => Seq.drop chars (Seq.length chars)
+
+
   structure Header =
   struct
     datatype first_field = Coordinate | Array
@@ -309,11 +318,21 @@ struct
       end
 
 
+  (* TODO: This is fairly slow? *)
   fun parse_real path chars =
-    (* TODO: This is fairly slow? *)
-    case Parse.parseReal chars of
-      SOME r => r
-    | NONE => error path "invalid real"
+    let
+      val stop =
+        case
+          FindFirst.findFirstSerial (0, Seq.length chars)
+            (Char.isSpace o Seq.nth chars)
+        of
+          NONE => Seq.length chars
+        | SOME i => i
+    in
+      case Parse.parseReal (Seq.take chars stop) of
+        SOME r => (r, Seq.drop chars stop)
+      | NONE => error path "invalid real"
+    end
 
 
   fun parse_coordinate {num_rows, num_cols, absolute_line, path} chars =
@@ -338,6 +357,10 @@ struct
 
       (r, c, chars)
     end
+
+
+  fun r_from_real x =
+    R.fromLarge IEEEReal.TO_NEAREST (Real.toLarge x)
 
 
   fun parse_coordinate_real_data
@@ -373,18 +396,67 @@ struct
               , path = path
               } cs
           val cs = skip_whitespace cs
-          val v = parse_real path cs
+          val (v, _) = parse_real path cs
         in
           Array.update (row_indices, i, I.fromInt r);
           Array.update (col_indices, i, I.fromInt c);
-          Array.update
-            (values, i, R.fromLarge IEEEReal.TO_NEAREST (Real.toLarge v))
+          Array.update (values, i, r_from_real v)
         end)
     in
       Coordinate
         { row_indices = row_indices
         , col_indices = col_indices
         , values = Values.Real values
+        }
+    end
+
+
+  fun parse_coordinate_complex_data
+    { path
+    , contents
+    , get_line_range
+    , start_line
+    , num_rows
+    , num_cols
+    , num_entries
+    } =
+    let
+      fun make_line i =
+        let val (start, stop) = get_line_range i
+        in Seq.subseq contents (start, stop - start)
+        end
+
+      val row_indices = ForkJoin.alloc num_entries
+      val col_indices = ForkJoin.alloc num_entries
+      val values = ForkJoin.alloc num_entries
+
+      (* parse entries and write results *)
+      val () = ForkJoin.parfor 1000 (0, num_entries) (fn i =>
+        let
+          val absolute_line = start_line + i
+          val cs = make_line absolute_line
+          val cs = skip_whitespace cs
+          val (r, c, cs) =
+            parse_coordinate
+              { num_rows = num_rows
+              , num_cols = num_cols
+              , absolute_line = absolute_line
+              , path = path
+              } cs
+          val cs = skip_whitespace cs
+          val (re, cs) = parse_real path cs
+          val cs = skip_whitespace cs
+          val (im, _) = parse_real path cs
+        in
+          Array.update (row_indices, i, I.fromInt r);
+          Array.update (col_indices, i, I.fromInt c);
+          Array.update (values, i, {re = r_from_real re, im = r_from_real im})
+        end)
+    in
+      Coordinate
+        { row_indices = row_indices
+        , col_indices = col_indices
+        , values = Values.Complex values
         }
     end
 
@@ -561,10 +633,14 @@ struct
                     , num_entries = num_entries
                     }
               | Header.Complex =>
-                  Coordinate
-                    { row_indices = emp ()
-                    , col_indices = emp ()
-                    , values = Values.Complex (emp ())
+                  parse_coordinate_complex_data
+                    { path = path
+                    , contents = contents
+                    , get_line_range = get_line_range
+                    , start_line = start_line
+                    , num_rows = num_rows
+                    , num_cols = num_cols
+                    , num_entries = num_entries
                     }
               | Header.Pattern =>
                   parse_coordinate_pattern_data
