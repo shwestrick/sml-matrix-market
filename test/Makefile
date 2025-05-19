@@ -1,4 +1,4 @@
-SOURCES=../lib/github.com/shwestrick/sml-matrix-market/**.sml ../lib/github.com/shwestrick/sml-matrix-market/**.mlb
+SOURCES=../lib/github.com/shwestrick/sml-matrix-market/**.sml ../lib/github.com/shwestrick/sml-matrix-market/**.mlb **.mlb **.sml
 
 main.mlton: $(SOURCES)
 	mlton main.mlton.mlb
