@@ -1,7 +1,12 @@
 functor MatrixMarket (structure I: INTEGER structure R: REAL):
 sig
 
-  (* "array" matrix market format is in column-major format *)
+  (* "Array" matrix market format is in column-major format.
+   * Note that the encoding of the columns depends on symmetries! If the
+   * data is either symmetric, skew-symmetric, or Hermitian, only the lower
+   * triangular portion is included, and the 2D structure will therefore be
+   * jagged.
+   *)
   structure Columns:
   sig
     datatype columns =
@@ -176,8 +181,8 @@ struct
       String.concatWith ", "
         [ "num_rows = " ^ Int.toString t1
         , "num_cols = " ^ Int.toString t0
-        , "data = " ^ showData t2
         , "symm = " ^ showSymmetry t3
+        , "data = " ^ showData t2
         ] ^ "}"
 
 
@@ -268,6 +273,31 @@ struct
       end
 
   end
+
+
+  fun triangular_number n =
+    if n mod 2 = 0 then (n div 2) * (n + 1) else ((n + 1) div 2) * n
+
+
+  fun check_num_entries {num_rows, num_cols, num_entries, symm, path} =
+    case num_entries of
+      NONE => ()
+    | SOME ne =>
+        let
+          val expected_num_entries =
+            case symm of
+              General => num_rows * num_cols
+            | Symmetric => triangular_number num_rows
+            | SkewSymmetric => triangular_number (num_rows - 1)
+            | Hermitian => triangular_number num_rows
+        in
+          if ne = expected_num_entries then
+            ()
+          else
+            error path
+              ("bad matrix: number of entries is " ^ Int.toString ne
+               ^ " but expected " ^ Int.toString expected_num_entries)
+        end
 
 
   fun emp () = Array.fromList []
@@ -567,6 +597,13 @@ struct
 
       val (f1, f2, f3) = Header.parse path (make_line 0)
 
+      val symm =
+        case f3 of
+          Header.General => General
+        | Header.Symmetric => Symmetric
+        | Header.SkewSymmetric => SkewSymmetric
+        | Header.Hermitian => Hermitian
+
       val first_non_comment_line =
         valOf (FindFirst.findFirst 2 (0, num_lines) (fn i =>
           let val (start, stop) = get_line_range i
@@ -586,6 +623,18 @@ struct
         in
           (nr, nc, ne)
         end
+
+      (* check squareness if needed *)
+      val () =
+        case symm of
+          General => ()
+        | _ =>
+            if num_rows = num_cols then
+              ()
+            else
+              error path
+                ("bad matrix: header claims " ^ showSymmetry symm
+                 ^ " but matrix is non-square")
 
       (* val _ =
         Option.app (fn x => print ("num_entries " ^ Int.toString x ^ "\n"))
@@ -655,28 +704,29 @@ struct
             end
 
         | Header.Array =>
-            (case f2 of
-               Header.Real => Array (Columns.Real (emp ()))
-             | Header.Integer => Array (Columns.Integer (emp ()))
-             | Header.Complex => Array (Columns.Complex (emp ()))
-             | Header.Pattern =>
-                 error path
-                   "invalid header: array cannot be combined with pattern")
+            let
+              val () = check_num_entries
+                { num_rows = num_rows
+                , num_cols = num_cols
+                , num_entries = num_entries
+                , symm = symm
+                , path = path
+                }
+            in
+              case f2 of
+                Header.Real => Array (Columns.Real (emp ()))
+              | Header.Integer => Array (Columns.Integer (emp ()))
+              | Header.Complex => Array (Columns.Complex (emp ()))
+              | Header.Pattern =>
+                  error path
+                    "invalid header: array cannot be combined with pattern"
+            end
     in
       print
         "[MatrixMarket.read_file: WARNING: work-in-progress: function not completed yet]\n";
 
       Matrix
-        { num_cols = num_cols
-        , num_rows = num_rows
-        , data = data
-        , symm =
-            case f3 of
-              Header.General => General
-            | Header.Symmetric => Symmetric
-            | Header.SkewSymmetric => SkewSymmetric
-            | Header.Hermitian => Hermitian
-        }
+        {num_cols = num_cols, num_rows = num_rows, data = data, symm = symm}
     end
 
 end
