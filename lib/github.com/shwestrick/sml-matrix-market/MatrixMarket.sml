@@ -265,6 +265,10 @@ struct
   fun emp () = Array.fromList []
 
 
+  fun is_digit c =
+    Char.>= (c, #"0") andalso Char.<= (c, #"9")
+
+
   fun maybe_parse_nonnegative_integer chars =
     let
       val n = Seq.length chars
@@ -275,22 +279,111 @@ struct
           let
             val c = Seq.nth chars i
           in
-            if Char.isSpace c then
-              SOME (acc, Seq.drop chars i)
-            else if Char.>= (c, #"0") andalso Char.<= (c, #"9") then
-              loop (10 * acc + (Char.ord c - 48), i + 1)
-            else
-              NONE
+            if is_digit c then loop (10 * acc + (Char.ord c - 48), i + 1)
+            else SOME (acc, Seq.drop chars i)
           end
     in
-      loop (0, 0)
+      if n = 0 then
+        NONE
+      else
+        let
+          val first_char = Seq.nth chars 0
+        in
+          if is_digit first_char then loop (Char.ord first_char - 48, 1)
+          else NONE
+        end
     end
 
 
   fun parse_nonnegative_integer path chars =
     case maybe_parse_nonnegative_integer chars of
-      SOME (x, i) => (x, i)
+      SOME (x, chars') => (x, chars')
     | NONE => error path "invalid nonnegative integer"
+
+
+  fun parse_integer path chars =
+    if Seq.length chars > 0 andalso Seq.nth chars 0 <> #"-" then
+      parse_nonnegative_integer path chars
+    else
+      let val (x, chars') = parse_nonnegative_integer path (Seq.drop chars 1)
+      in (~x, chars')
+      end
+
+
+  fun parse_real path chars =
+    (* TODO: This is fairly slow? *)
+    case Parse.parseReal chars of
+      SOME r => r
+    | NONE => error path "invalid real"
+
+
+  fun parse_coordinate_real
+    { path
+    , contents
+    , num_lines
+    , get_line_range
+    , first_non_comment_line
+    , num_rows
+    , num_cols
+    , num_entries
+    } =
+    let
+      fun make_line i =
+        let val (start, stop) = get_line_range i
+        in Seq.subseq contents (start, stop - start)
+        end
+
+      val start_entry_line = first_non_comment_line + 1
+      val stop_entry_line = start_entry_line + num_entries
+      val () =
+        if stop_entry_line <= num_lines then
+          ()
+        else
+          error path
+            ("not enough lines to parse: expected " ^ Int.toString num_entries
+             ^ " entries but found only "
+             ^ Int.toString (num_lines - start_entry_line))
+
+      val row_indices = ForkJoin.alloc num_entries
+      val col_indices = ForkJoin.alloc num_entries
+      val values = ForkJoin.alloc num_entries
+
+      (* parse entries and write results *)
+      val () = ForkJoin.parfor 1000 (0, num_entries) (fn i =>
+        let
+          val cs = make_line (start_entry_line + i)
+          val cs = skip_whitespace cs
+          val (r, cs) = parse_nonnegative_integer path cs
+          val cs = skip_whitespace cs
+          val (c, cs) = parse_nonnegative_integer path cs
+          val cs = skip_whitespace cs
+          val v = parse_real path cs
+        in
+          if 0 < r andalso r <= num_rows then
+            ()
+          else
+            error path
+              ("line " ^ Int.toString (1 + start_entry_line + i)
+               ^ ": row index " ^ Int.toString r ^ " out of bounds");
+          if 0 < c andalso c <= num_cols then
+            ()
+          else
+            error path
+              ("line " ^ Int.toString (1 + start_entry_line + i)
+               ^ ": col index " ^ Int.toString c ^ " out of bounds");
+
+          Array.update (row_indices, i, I.fromInt r);
+          Array.update (col_indices, i, I.fromInt c);
+          Array.update
+            (values, i, R.fromLarge IEEEReal.TO_NEAREST (Real.toLarge v))
+        end)
+    in
+      Coordinate
+        { row_indices = row_indices
+        , col_indices = col_indices
+        , values = Values.Real values
+        }
+    end
 
 
   fun read_file (path: string) =
@@ -321,6 +414,7 @@ struct
       val (num_rows: int, num_cols: int, num_entries: int option) =
         let
           val cs = make_line first_non_comment_line
+          val cs = skip_whitespace cs
           val (nr, cs) = parse_nonnegative_integer path cs
           val cs = skip_whitespace cs
           val (nc, cs) = parse_nonnegative_integer path cs
@@ -337,27 +431,39 @@ struct
       val data =
         case f1 of
           Header.Coordinate =>
-            (case f2 of
-               Header.Real =>
-                 Coordinate
-                   { row_indices = emp ()
-                   , col_indices = emp ()
-                   , values = Values.Real (emp ())
-                   }
-             | Header.Integer =>
-                 Coordinate
-                   { row_indices = emp ()
-                   , col_indices = emp ()
-                   , values = Values.Integer (emp ())
-                   }
-             | Header.Complex =>
-                 Coordinate
-                   { row_indices = emp ()
-                   , col_indices = emp ()
-                   , values = Values.Complex (emp ())
-                   }
-             | Header.Pattern =>
-                 Pattern {row_indices = emp (), col_indices = emp ()})
+            let
+              val num_entries =
+                valOf num_entries
+                handle Option =>
+                  error path "missing number of entries for coordinate format"
+            in
+              case f2 of
+                Header.Real =>
+                  parse_coordinate_real
+                    { path = path
+                    , contents = contents
+                    , num_lines = num_lines
+                    , get_line_range = get_line_range
+                    , first_non_comment_line = first_non_comment_line
+                    , num_rows = num_rows
+                    , num_cols = num_cols
+                    , num_entries = num_entries
+                    }
+              | Header.Integer =>
+                  Coordinate
+                    { row_indices = emp ()
+                    , col_indices = emp ()
+                    , values = Values.Integer (emp ())
+                    }
+              | Header.Complex =>
+                  Coordinate
+                    { row_indices = emp ()
+                    , col_indices = emp ()
+                    , values = Values.Complex (emp ())
+                    }
+              | Header.Pattern =>
+                  Pattern {row_indices = emp (), col_indices = emp ()}
+            end
 
         | Header.Array =>
             (case f2 of
