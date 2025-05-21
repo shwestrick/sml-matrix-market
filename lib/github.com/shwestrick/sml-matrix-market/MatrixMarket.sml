@@ -306,45 +306,67 @@ struct
   fun is_digit c =
     Char.>= (c, #"0") andalso Char.<= (c, #"9")
 
+  fun digit_char_to_word64 c =
+    Word64.- (Word64.fromInt (Char.ord c), 0w48) (* 48 = ord(#"0") *)
 
-  fun maybe_parse_nonnegative_integer chars =
+  fun push_digit_char acc c =
+    Word64.* (0w10, acc) + digit_char_to_word64 c
+
+  fun maybe_parse_digits (chars: char Seq.t) :
+    {result: Word64.word, remaining: char Seq.t} option =
     let
-      val n = Seq.length chars
+      val (a, start, n) = ArraySlice.base chars
+      val stop = start + n
+
       fun loop (acc, i) =
-        if i >= n then
-          SOME (acc, Seq.drop chars i)
+        if i >= stop then
+          (acc, i)
         else
           let
-            val c = Seq.nth chars i
+            val c = Array.sub (a, i)
           in
-            if is_digit c then loop (10 * acc + (Char.ord c - 48), i + 1)
-            else SOME (acc, Seq.drop chars i)
+            if is_digit c then loop (push_digit_char acc c, i + 1) else (acc, i)
           end
     in
       if n = 0 then
         NONE
       else
         let
-          val first_char = Seq.nth chars 0
+          val first_char = Array.sub (a, start)
         in
-          if is_digit first_char then loop (Char.ord first_char - 48, 1)
-          else NONE
+          if is_digit first_char then
+            let val (acc, i) = loop (digit_char_to_word64 first_char, start + 1)
+            in SOME {result = acc, remaining = Seq.drop chars (i - start)}
+            end
+          else
+            NONE
         end
     end
 
 
-  fun parse_nonnegative_integer path chars =
+  fun maybe_parse_nonnegative_integer chars =
+    Option.map
+      (fn {result, remaining} =>
+         {result = Word64.toInt result, remaining = remaining})
+      (maybe_parse_digits chars)
+
+
+  fun parse_nonnegative_integer path chars :
+    {result: int, remaining: char Seq.t} =
     case maybe_parse_nonnegative_integer chars of
-      SOME (x, chars') => (x, chars')
+      SOME xxx => xxx
     | NONE => error path "invalid nonnegative integer"
 
 
-  fun parse_integer path chars =
+  fun parse_integer path chars : {result: int, remaining: char Seq.t} =
     if Seq.length chars > 0 andalso Seq.nth chars 0 <> #"-" then
       parse_nonnegative_integer path chars
     else
-      let val (x, chars') = parse_nonnegative_integer path (Seq.drop chars 1)
-      in (~x, chars')
+      let
+        val {result, remaining} = parse_nonnegative_integer path
+          (Seq.drop chars 1)
+      in
+        {result = ~result, remaining = remaining}
       end
 
 
@@ -367,9 +389,9 @@ struct
 
   fun parse_coordinate {num_rows, num_cols, absolute_line, path} chars =
     let
-      val (r, chars) = parse_nonnegative_integer path chars
+      val {result = r, remaining = chars} = parse_nonnegative_integer path chars
       val chars = skip_whitespace chars
-      val (c, chars) = parse_nonnegative_integer path chars
+      val {result = c, remaining = chars} = parse_nonnegative_integer path chars
     in
       if 0 < r andalso r <= num_rows then
         ()
@@ -524,7 +546,7 @@ struct
               , path = path
               } cs
           val cs = skip_whitespace cs
-          val (v, _) = parse_integer path cs
+          val v = #result (parse_integer path cs)
         in
           Array.update (row_indices, i, I.fromInt r);
           Array.update (col_indices, i, I.fromInt c);
@@ -615,11 +637,11 @@ struct
         let
           val cs = make_line first_non_comment_line
           val cs = skip_whitespace cs
-          val (nr, cs) = parse_nonnegative_integer path cs
+          val {result = nr, remaining = cs} = parse_nonnegative_integer path cs
           val cs = skip_whitespace cs
-          val (nc, cs) = parse_nonnegative_integer path cs
+          val {result = nc, remaining = cs} = parse_nonnegative_integer path cs
           val cs = skip_whitespace cs
-          val ne = Option.map #1 (maybe_parse_nonnegative_integer cs)
+          val ne = Option.map #result (maybe_parse_nonnegative_integer cs)
         in
           (nr, nc, ne)
         end
