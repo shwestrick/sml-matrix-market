@@ -1,5 +1,6 @@
 local
   ../../mpllang/mpllib/sources.mpl.mlb
+  ../sml-fast-real/sources.mlb
   MatrixMarket.sml
 in
   functor MatrixMarket

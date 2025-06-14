@@ -2,4 +2,5 @@ package github.com/shwestrick/sml-matrix-market
 
 require {
   github.com/mpllang/mpllib 0.5.0 #6cfabda8fd78ffc8d9739abc456a7009bebb50a9
+  github.com/shwestrick/sml-fast-real 0.1.0 #965d303e111b9617d5ea58504263cbd35f8c27a0
 }

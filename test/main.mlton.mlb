@@ -1,3 +1,4 @@
+$(SML_LIB)/basis/mlton.mlb
 ../lib/github.com/mpllang/mpllib/sources.mlton.mlb
 ../lib/github.com/shwestrick/sml-matrix-market/sources.mlton.mlb
 main.sml

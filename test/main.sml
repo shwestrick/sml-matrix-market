@@ -26,8 +26,13 @@ struct
     end
 end
 
-structure Main32 = Main(MatrixMarket (structure I = Int32 structure R = Real32))
-structure Main64 = Main(MatrixMarket (structure I = Int64 structure R = Real64))
+(* need MLton.RealXX.fromLargeWord *)
+structure R32 =
+struct open Real32 open MLton.Real32 end
+structure R64 = struct open Real64 open MLton.Real64 end
+
+structure Main32 = Main(MatrixMarket (structure I = Int32 structure R = R32))
+structure Main64 = Main(MatrixMarket (structure I = Int64 structure R = R64))
 
 val p = CommandLineArgs.parseInt "p" 32
 val _ = print ("-p " ^ Int.toString p ^ "\n")

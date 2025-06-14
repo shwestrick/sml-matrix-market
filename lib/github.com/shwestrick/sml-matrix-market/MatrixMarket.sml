@@ -1,4 +1,14 @@
-functor MatrixMarket (structure I: INTEGER structure R: REAL):
+functor MatrixMarket
+  (structure I: INTEGER
+   structure R:
+   sig
+     include REAL
+
+     (* needed for FastReal parsing
+      * see github.com/shwestrick/sml-fast-real
+      *)
+     val fromLargeWord: LargeWord.word -> real
+   end):
 sig
 
   (* "Array" matrix market format is in column-major format.
@@ -370,19 +380,17 @@ struct
       end
 
 
-  (* TODO: This is fairly slow? *)
+  (* github.com/shwestrick/sml-fast-real *)
+  structure FR = FastReal(R)
+
   fun parse_real path chars =
     let
-      val stop =
-        case
-          FindFirst.findFirstSerial (0, Seq.length chars)
-            (Char.isSpace o Seq.nth chars)
-        of
-          NONE => Seq.length chars
-        | SOME i => i
+      val (a, start, n) = ArraySlice.base chars
+      val parse_result = FR.from_chars_with_info
+        {start = start, stop = start + n, get = fn i => Array.sub (a, i)}
     in
-      case Parse.parseReal (Seq.take chars stop) of
-        SOME r => (r, Seq.drop chars stop)
+      case parse_result of
+        SOME {result, num_chomped, ...} => (result, Seq.drop chars num_chomped)
       | NONE => error path "invalid real"
     end
 
@@ -452,7 +460,7 @@ struct
         in
           Array.update (row_indices, i, I.fromInt r);
           Array.update (col_indices, i, I.fromInt c);
-          Array.update (values, i, r_from_real v)
+          Array.update (values, i, v)
         end)
     in
       Coordinate
@@ -502,7 +510,7 @@ struct
         in
           Array.update (row_indices, i, I.fromInt r);
           Array.update (col_indices, i, I.fromInt c);
-          Array.update (values, i, {re = r_from_real re, im = r_from_real im})
+          Array.update (values, i, {re = re, im = im})
         end)
     in
       Coordinate
