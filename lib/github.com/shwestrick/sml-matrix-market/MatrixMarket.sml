@@ -200,12 +200,14 @@ struct
         ] ^ "}"
 
 
-  (* check if str is at the beginning of chars *)
-  fun begins_with (str: string) (chars: char Seq.t) =
-    String.size str <= Seq.length chars
+  (* check if str is at the beginning of chars
+   * lowercase_str should only contain lowercase characters
+   *)
+  fun begins_with_case_insensitive (lowercase_str: string) (chars: char Seq.t) =
+    String.size lowercase_str <= Seq.length chars
     andalso
-    Util.all (0, String.size str) (fn i =>
-      String.sub (str, i) = Seq.nth chars i)
+    Util.all (0, String.size lowercase_str) (fn i =>
+      String.sub (lowercase_str, i) = Char.toLower (Seq.nth chars i))
 
 
   fun error path msg =
@@ -236,23 +238,32 @@ struct
 
     fun parse path (chars: char Seq.t) =
       let
-        fun expect chars str {err: string} =
-          if begins_with str chars then Seq.drop chars (String.size str)
-          else error path err
+        fun expect_case_insensitive chars str {err: string} =
+          if begins_with_case_insensitive str chars then
+            Seq.drop chars (String.size str)
+          else
+            error path err
 
-        fun test chars str =
-          if begins_with str chars then SOME (Seq.drop chars (String.size str))
-          else NONE
+        fun test_case_insensitive chars str =
+          if begins_with_case_insensitive str chars then
+            SOME (Seq.drop chars (String.size str))
+          else
+            NONE
 
         val chars =
-          expect chars "%%MatrixMarket matrix" {err = "not a MatrixMarket file"}
+          expect_case_insensitive chars "%%matrixmarket"
+            {err = "not a MatrixMarket file"}
+        val chars = skip_whitespace chars
+        val chars =
+          expect_case_insensitive chars "matrix"
+            {err = "not a MatrixMarket file"}
 
 
         fun try_each chars err_msg tests =
           case tests of
             [] => error path err_msg
           | (str, result) :: tests' =>
-              case test chars str of
+              case test_case_insensitive chars str of
                 SOME chars => (result, chars)
               | NONE => try_each chars err_msg tests'
 
@@ -280,7 +291,7 @@ struct
             [ ("general", General)
             , ("symmetric", Symmetric)
             , ("skew-symmetric", SkewSymmetric)
-            , ("Hermitian", Hermitian)
+            , ("hermitian", Hermitian)
             ]
       in
         (first_field, second_field, third_field)
