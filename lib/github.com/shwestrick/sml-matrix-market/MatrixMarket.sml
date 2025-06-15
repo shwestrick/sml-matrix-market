@@ -447,6 +447,15 @@ struct
     R.fromLarge IEEEReal.TO_NEAREST (Real.toLarge x)
 
 
+  (* =========================================================================
+   * =========================================================================
+   * COORDINATE DATA PARSING
+   *)
+
+  (* ======================================
+   * coordinate real
+   *)
+
   fun parse_coordinate_real_data
     { path
     , contents
@@ -494,6 +503,9 @@ struct
         }
     end
 
+  (* ======================================
+   * coordinate complex
+   *)
 
   fun parse_coordinate_complex_data
     { path
@@ -544,6 +556,9 @@ struct
         }
     end
 
+  (* ======================================
+   * coordinate integer
+   *)
 
   fun parse_coordinate_integer_data
     { path
@@ -592,6 +607,9 @@ struct
         }
     end
 
+  (* ======================================
+   * coordinate pattern
+   *)
 
   fun parse_coordinate_pattern_data
     { path
@@ -633,6 +651,15 @@ struct
     end
 
 
+  (* =========================================================================
+   * =========================================================================
+   * ARRAY DATA PARSING
+   *)
+
+  (* ======================================
+   * array real
+   *)
+
   fun parse_array_real_data
     { path
     , contents
@@ -673,6 +700,56 @@ struct
       Array (Columns.Real cols)
     end
 
+
+  (* ======================================
+   * array integer
+   *)
+
+  fun parse_array_integer_data
+    { path
+    , contents
+    , get_line_range
+    , start_line
+    , num_rows
+    , num_cols
+    , num_entries
+    , symm
+    } =
+    let
+      fun make_line i =
+        let val (start, stop) = get_line_range i
+        in Seq.subseq contents (start, stop - start)
+        end
+
+      val dimsymm = {num_rows = num_rows, num_cols = num_cols, symm = symm}
+      val get_col_size: int -> int = make_column_size_fn dimsymm
+      val get_col_start: int -> int = make_column_start_fn dimsymm
+
+      (* parse entries and write results *)
+      val cols = SeqBasis.tabulate 10 (0, num_cols) (fn col =>
+        let
+          val entry_start = get_col_start col
+          val num_col_entries = get_col_size col
+        in
+          SeqBasis.tabulate 1000 (0, num_col_entries) (fn i =>
+            let
+              val absolute_line = start_line + entry_start + i
+              val cs = make_line absolute_line
+              val cs = skip_whitespace cs
+              val {result, ...} = parse_integer path cs
+            in
+              I.fromInt result
+            end)
+        end)
+    in
+      Array (Columns.Integer cols)
+    end
+
+
+  (* =========================================================================
+   * =========================================================================
+   * MAIN ENTRYPOINT
+   *)
 
   fun read_file (path: string) =
     let
@@ -830,7 +907,17 @@ struct
                     , num_entries = num_entries
                     , symm = symm
                     }
-              | Header.Integer => Array (Columns.Integer (emp ()))
+              | Header.Integer =>
+                  parse_array_integer_data
+                    { path = path
+                    , contents = contents
+                    , get_line_range = get_line_range
+                    , start_line = start_line
+                    , num_rows = num_rows
+                    , num_cols = num_cols
+                    , num_entries = num_entries
+                    , symm = symm
+                    }
               | Header.Complex => Array (Columns.Complex (emp ()))
               | Header.Pattern =>
                   error path
