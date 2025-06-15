@@ -745,6 +745,52 @@ struct
       Array (Columns.Integer cols)
     end
 
+  (* ======================================
+   * array complex
+   *)
+
+  fun parse_array_complex_data
+    { path
+    , contents
+    , get_line_range
+    , start_line
+    , num_rows
+    , num_cols
+    , num_entries
+    , symm
+    } =
+    let
+      fun make_line i =
+        let val (start, stop) = get_line_range i
+        in Seq.subseq contents (start, stop - start)
+        end
+
+      val dimsymm = {num_rows = num_rows, num_cols = num_cols, symm = symm}
+      val get_col_size: int -> int = make_column_size_fn dimsymm
+      val get_col_start: int -> int = make_column_start_fn dimsymm
+
+      (* parse entries and write results *)
+      val cols = SeqBasis.tabulate 10 (0, num_cols) (fn col =>
+        let
+          val entry_start = get_col_start col
+          val num_col_entries = get_col_size col
+        in
+          SeqBasis.tabulate 1000 (0, num_col_entries) (fn i =>
+            let
+              val absolute_line = start_line + entry_start + i
+              val cs = make_line absolute_line
+              val cs = skip_whitespace cs
+              val (re, cs) = parse_real path cs
+              val cs = skip_whitespace cs
+              val (im, _) = parse_real path cs
+            in
+              {re = re, im = im}
+            end)
+        end)
+    in
+      Array (Columns.Complex cols)
+    end
+
 
   (* =========================================================================
    * =========================================================================
@@ -831,48 +877,22 @@ struct
                     ("not enough lines to parse: expected "
                      ^ Int.toString num_entries ^ " entries but found only "
                      ^ Int.toString (num_lines - start_line))
+
+              val args =
+                { path = path
+                , contents = contents
+                , get_line_range = get_line_range
+                , start_line = start_line
+                , num_rows = num_rows
+                , num_cols = num_cols
+                , num_entries = num_entries
+                }
             in
               case f2 of
-                Header.Real =>
-                  parse_coordinate_real_data
-                    { path = path
-                    , contents = contents
-                    , get_line_range = get_line_range
-                    , start_line = start_line
-                    , num_rows = num_rows
-                    , num_cols = num_cols
-                    , num_entries = num_entries
-                    }
-              | Header.Integer =>
-                  parse_coordinate_integer_data
-                    { path = path
-                    , contents = contents
-                    , get_line_range = get_line_range
-                    , start_line = start_line
-                    , num_rows = num_rows
-                    , num_cols = num_cols
-                    , num_entries = num_entries
-                    }
-              | Header.Complex =>
-                  parse_coordinate_complex_data
-                    { path = path
-                    , contents = contents
-                    , get_line_range = get_line_range
-                    , start_line = start_line
-                    , num_rows = num_rows
-                    , num_cols = num_cols
-                    , num_entries = num_entries
-                    }
-              | Header.Pattern =>
-                  parse_coordinate_pattern_data
-                    { path = path
-                    , contents = contents
-                    , get_line_range = get_line_range
-                    , start_line = start_line
-                    , num_rows = num_rows
-                    , num_cols = num_cols
-                    , num_entries = num_entries
-                    }
+                Header.Real => parse_coordinate_real_data args
+              | Header.Integer => parse_coordinate_integer_data args
+              | Header.Complex => parse_coordinate_complex_data args
+              | Header.Pattern => parse_coordinate_pattern_data args
             end
 
         | Header.Array =>
@@ -894,31 +914,22 @@ struct
                     ("not enough lines to parse: expected "
                      ^ Int.toString num_entries ^ " entries but found only "
                      ^ Int.toString (num_lines - start_line))
+
+              val args =
+                { path = path
+                , contents = contents
+                , get_line_range = get_line_range
+                , start_line = start_line
+                , num_rows = num_rows
+                , num_cols = num_cols
+                , num_entries = num_entries
+                , symm = symm
+                }
             in
               case f2 of
-                Header.Real =>
-                  parse_array_real_data
-                    { path = path
-                    , contents = contents
-                    , get_line_range = get_line_range
-                    , start_line = start_line
-                    , num_rows = num_rows
-                    , num_cols = num_cols
-                    , num_entries = num_entries
-                    , symm = symm
-                    }
-              | Header.Integer =>
-                  parse_array_integer_data
-                    { path = path
-                    , contents = contents
-                    , get_line_range = get_line_range
-                    , start_line = start_line
-                    , num_rows = num_rows
-                    , num_cols = num_cols
-                    , num_entries = num_entries
-                    , symm = symm
-                    }
-              | Header.Complex => Array (Columns.Complex (emp ()))
+                Header.Real => parse_array_real_data args
+              | Header.Integer => parse_array_integer_data args
+              | Header.Complex => parse_array_complex_data args
               | Header.Pattern =>
                   error path
                     "invalid header: array cannot be combined with pattern"
