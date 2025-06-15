@@ -16,6 +16,10 @@ sig
    * data is either symmetric, skew-symmetric, or Hermitian, only the lower
    * triangular portion is included, and the 2D structure will therefore be
    * jagged.
+   *
+   * Each inner array is either:
+   *   (a) one whole column (if no symmetry), or
+   *   (b) a lower triangular portion of a column (if there is some symmetry)
    *)
   structure Columns:
   sig
@@ -289,25 +293,45 @@ struct
     if n mod 2 = 0 then (n div 2) * (n + 1) else ((n + 1) div 2) * n
 
 
-  fun check_num_entries {num_rows, num_cols, num_entries, symm, path} =
+  fun expected_num_entries_array {num_rows, num_cols, symm} =
+    case symm of
+      General => num_rows * num_cols
+    | Symmetric => triangular_number num_rows
+    | SkewSymmetric => triangular_number (num_rows - 1)
+    | Hermitian => triangular_number num_rows
+
+
+  fun check_num_entries_array (dimsymm as {num_rows, num_cols, symm})
+    {num_entries, path} =
     case num_entries of
       NONE => ()
     | SOME ne =>
-        let
-          val expected_num_entries =
-            case symm of
-              General => num_rows * num_cols
-            | Symmetric => triangular_number num_rows
-            | SkewSymmetric => triangular_number (num_rows - 1)
-            | Hermitian => triangular_number num_rows
-        in
-          if ne = expected_num_entries then
-            ()
-          else
-            error path
-              ("bad matrix: number of entries is " ^ Int.toString ne
-               ^ " but expected " ^ Int.toString expected_num_entries)
-        end
+        if ne = expected_num_entries_array dimsymm then
+          ()
+        else
+          error path
+            ("bad matrix: number of entries is " ^ Int.toString ne
+             ^ " but expected "
+             ^ Int.toString (expected_num_entries_array dimsymm))
+
+
+  fun make_column_size_fn {num_rows, num_cols, symm} =
+    case symm of
+      General => (fn col => num_rows)
+    | SkewSymmetric => (fn col => num_rows - col - 1)
+    | _ => (fn col => num_rows - col)
+
+
+  fun make_column_start_fn {num_rows, num_cols, symm} =
+    case symm of
+      General => (fn col => num_rows * col)
+    | SkewSymmetric =>
+        (fn col =>
+           triangular_number (num_cols - 1)
+           - triangular_number (num_cols - 1 - col))
+    | _ =>
+        (fn col =>
+           triangular_number num_cols - triangular_number (num_cols - col))
 
 
   fun emp () = Array.fromList []
@@ -609,6 +633,47 @@ struct
     end
 
 
+  fun parse_array_real_data
+    { path
+    , contents
+    , get_line_range
+    , start_line
+    , num_rows
+    , num_cols
+    , num_entries
+    , symm
+    } =
+    let
+      fun make_line i =
+        let val (start, stop) = get_line_range i
+        in Seq.subseq contents (start, stop - start)
+        end
+
+      val dimsymm = {num_rows = num_rows, num_cols = num_cols, symm = symm}
+      val get_col_size: int -> int = make_column_size_fn dimsymm
+      val get_col_start: int -> int = make_column_start_fn dimsymm
+
+      (* parse entries and write results *)
+      val cols = SeqBasis.tabulate 10 (0, num_cols) (fn col =>
+        let
+          val entry_start = get_col_start col
+          val num_col_entries = get_col_size col
+        in
+          SeqBasis.tabulate 1000 (0, num_col_entries) (fn i =>
+            let
+              val absolute_line = start_line + entry_start + i
+              val cs = make_line absolute_line
+              val cs = skip_whitespace cs
+              val (v, _) = parse_real path cs
+            in
+              v
+            end)
+        end)
+    in
+      Array (Columns.Real cols)
+    end
+
+
   fun read_file (path: string) =
     let
       val contents = ReadFile.contentsSeq path
@@ -735,16 +800,36 @@ struct
 
         | Header.Array =>
             let
-              val () = check_num_entries
-                { num_rows = num_rows
-                , num_cols = num_cols
-                , num_entries = num_entries
-                , symm = symm
-                , path = path
-                }
+              val dimsymm =
+                {num_rows = num_rows, num_cols = num_cols, symm = symm}
+              val () =
+                check_num_entries_array dimsymm
+                  {num_entries = num_entries, path = path}
+              val num_entries = expected_num_entries_array dimsymm
+
+              val start_line = first_non_comment_line + 1
+              val stop_line = start_line + num_entries
+              val () =
+                if stop_line <= num_lines then
+                  ()
+                else
+                  error path
+                    ("not enough lines to parse: expected "
+                     ^ Int.toString num_entries ^ " entries but found only "
+                     ^ Int.toString (num_lines - start_line))
             in
               case f2 of
-                Header.Real => Array (Columns.Real (emp ()))
+                Header.Real =>
+                  parse_array_real_data
+                    { path = path
+                    , contents = contents
+                    , get_line_range = get_line_range
+                    , start_line = start_line
+                    , num_rows = num_rows
+                    , num_cols = num_cols
+                    , num_entries = num_entries
+                    , symm = symm
+                    }
               | Header.Integer => Array (Columns.Integer (emp ()))
               | Header.Complex => Array (Columns.Complex (emp ()))
               | Header.Pattern =>
