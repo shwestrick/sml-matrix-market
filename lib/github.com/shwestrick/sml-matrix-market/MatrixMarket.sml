@@ -946,9 +946,6 @@ struct
                     "invalid header: array cannot be combined with pattern"
             end
     in
-      print
-        "[MatrixMarket.read_file: WARNING: work-in-progress: function not completed yet]\n";
-
       Matrix
         {num_cols = num_cols, num_rows = num_rows, data = data, symm = symm}
     end
