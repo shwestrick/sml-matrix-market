@@ -47,6 +47,16 @@ functor MatrixMarket
      val fromLargeWord: LargeWord.word -> real
    end):
 sig
+
+  (* For files with the following header, data is organized into columns.
+   *   %%MatrixMarket matrix array ...
+   * Note that the encoding of the columns depends on symmetries! If the
+   * data is either symmetric, skew-symmetric, or Hermitian, only the lower
+   * triangular portion is included, and the 2D structure will therefore be
+   * jagged. Each inner array is either:
+   *   (a) one whole column (if no symmetry), or
+   *   (b) a lower triangular portion of a column (if there is some symmetry)
+   *)
   structure Columns:
   sig
     datatype columns =
@@ -56,6 +66,16 @@ sig
     type t = columns
   end
 
+
+  (* For files with the following header, data is stored sparsely.
+   *   %%MatrixMarket matrix coordinate [real|integer|complex] ...
+   * The data of such a matrix will be parsed into the SML form:
+   *   Coordinate {row_indices, col_indices, values}
+   * These three arrays together are essentially an SoA representation
+   * of the tuples (row, col, value) which are the entries of the matrix.
+   * For every i, we have one entry:
+   *     (row_indices[i], col_indices[i], values[i])
+   *)
   structure Values:
   sig
     datatype values =
@@ -65,17 +85,41 @@ sig
     type t = values
   end
 
+
+  (* Array and Coordinate forms described above. The Pattern form is
+   * essentially the same as Coordinate, but with no values.
+   *)
   datatype data =
     Array of Columns.t
   | Coordinate of
       {row_indices: I.int array, col_indices: I.int array, values: Values.t}
   | Pattern of {row_indices: I.int array, col_indices: I.int array}
 
+
+  (* The data stored in MatrixMarket files has a few ad-hoc compression
+   * schemes, taking advantage of symmetries commonly found in matrices:
+   *
+   *   General: no symmetry, all entries are included in the data.
+   *
+   *   Symmetric: matrix is symmetric along the diagonal (M[i,j] = M[j,i]).
+   *     The data includes only the lower triangular portion, including
+   *     diagonal entries, which can be non-zero.
+   *
+   *   SkewSymmetric: same as Symmetric, but the data along the diagonal is 0
+   *     and is excluded.
+   *
+   *   Hermitian: as the name suggests. The values must be complex, and only
+   *     the lower triangular portion of the matrix is included in the data,
+   *     including the diagonal, which can be non-zero. The upper triangular
+   *     portion is excluded; this can be recovered according to the definition
+   *     of Hermitian matrices: M[i,j] = ComplexConjugate(M[j,i]).
+   *)
   datatype symmetry =
     General
-  | SkewSymmetric
   | Symmetric
+  | SkewSymmetric
   | Hermitian
+
 
   datatype matrix =
     Matrix of {num_cols: int, num_rows: int, data: data, symm: symmetry}

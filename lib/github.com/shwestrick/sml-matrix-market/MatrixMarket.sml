@@ -15,9 +15,7 @@ sig
    * Note that the encoding of the columns depends on symmetries! If the
    * data is either symmetric, skew-symmetric, or Hermitian, only the lower
    * triangular portion is included, and the 2D structure will therefore be
-   * jagged.
-   *
-   * Each inner array is either:
+   * jagged. Each inner array is either:
    *   (a) one whole column (if no symmetry), or
    *   (b) a lower triangular portion of a column (if there is some symmetry)
    *)
@@ -33,6 +31,15 @@ sig
   end
 
 
+  (* For files with the following header, data is stored sparsely.
+   *   %%MatrixMarket matrix coordinate [real|integer|complex] ...
+   * The data of such a matrix will be parsed into the SML form:
+   *   Coordinate {row_indices, col_indices, values}
+   * These three arrays together are essentially an SoA representation
+   * of the tuples (row, col, value) which are the entries of the matrix.
+   * For every i, we have one entry:
+   *     (row_indices[i], col_indices[i], values[i])
+   *)
   structure Values:
   sig
     datatype values =
@@ -45,6 +52,9 @@ sig
   end
 
 
+  (* Array and Coordinate forms described above. The Pattern form is
+   * essentially the same as Coordinate, but with no values.
+   *)
   datatype data =
     Array of Columns.t
   | Coordinate of
@@ -72,13 +82,13 @@ sig
    *)
   datatype symmetry =
     General
-  | SkewSymmetric
   | Symmetric
+  | SkewSymmetric
   | Hermitian
+
 
   datatype matrix =
     Matrix of {num_cols: int, num_rows: int, data: data, symm: symmetry}
-
 
   val showData: data -> string
   val showSymmetry: symmetry -> string
